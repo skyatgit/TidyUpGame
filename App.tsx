@@ -159,6 +159,7 @@ export default function App() {
   const containerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024);
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768);
+  const activeTouchIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -235,24 +236,31 @@ export default function App() {
 
   // --- Interaction Handlers ---
 
-  const rotateItem = (item: GameItem) => {
+  const rotateItem = useCallback((item: GameItem) => {
     const newShape = rotateShapeMatrix(item.shape);
     return {
       ...item,
       shape: newShape,
       rotation: (item.rotation + 90) % 360
     };
-  };
+  }, []);
+
+  const rotateDraggedItem = useCallback(() => {
+    setDraggedItem(prev => (prev ? rotateItem(prev) : null));
+  }, [rotateItem]);
 
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, item: GameItem) => {
     if (item.isBlocked) return; 
 
     e.preventDefault(); 
+    activeTouchIdRef.current = null;
     
     let clientX, clientY;
     if ('touches' in e) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
+      const touch = e.touches[0];
+      clientX = touch.clientX;
+      clientY = touch.clientY;
+      activeTouchIdRef.current = touch.identifier;
     } else {
       clientX = (e as React.MouseEvent).clientX;
       clientY = (e as React.MouseEvent).clientY;
@@ -267,19 +275,20 @@ export default function App() {
   const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
     if (!draggedItem) return;
     if ('touches' in e) {
+      const activeId = activeTouchIdRef.current;
+      if (activeId === null) return;
+      const touch = Array.from(e.touches).find(t => t.identifier === activeId) || e.touches[0];
+      if (!touch) return;
       e.preventDefault();
-    }
-
-    let clientX, clientY;
-    if ('touches' in e) {
-      clientX = (e as TouchEvent).touches[0].clientX;
-      clientY = (e as TouchEvent).touches[0].clientY;
+      setCursorPos({ x: touch.clientX, y: touch.clientY });
+      var clientX = touch.clientX;
+      var clientY = touch.clientY;
     } else {
-      clientX = (e as MouseEvent).clientX;
-      clientY = (e as MouseEvent).clientY;
+      const mouseEvent = e as MouseEvent;
+      setCursorPos({ x: mouseEvent.clientX, y: mouseEvent.clientY });
+      var clientX = mouseEvent.clientX;
+      var clientY = mouseEvent.clientY;
     }
-
-    setCursorPos({ x: clientX, y: clientY });
 
     // Threshold for "Dragging" vs "Clicking"
     if (!isDraggingActive) {
@@ -348,13 +357,21 @@ export default function App() {
 
   }, [draggedItem, containerSlots, dragStartPos, isDraggingActive, containerCellSize, isSmallScreen]);
 
-  const handleDragEnd = () => {
+  const handleDragEnd = useCallback((event?: MouseEvent | TouchEvent | null) => {
     if (!draggedItem) return;
 
+    if (event && 'changedTouches' in event) {
+      const activeId = activeTouchIdRef.current;
+      if (activeId !== null) {
+        const relevantTouchEnded = Array.from(event.changedTouches).some(t => t.identifier === activeId);
+        if (!relevantTouchEnded) {
+          return;
+        }
+      }
+    }
+
     if (isDraggingActive) {
-      // Logic for dropping item
       if (hoverTarget && hoverTarget.isValid) {
-        // Place item in container
         setContainerSlots(prev => prev.map(c => {
           if (c && c.id === hoverTarget.containerId) {
             const newGrid = c.gridState.map(row => [...row]);
@@ -372,19 +389,18 @@ export default function App() {
 
         const remainingItems = items.filter(i => i.id !== draggedItem.id);
         setItems(updateBlockedStatus(remainingItems));
-        
         setScore(s => s + 100);
-
         if (remainingItems.length === 0) {
           setGameOver(true);
         }
       }
-    } 
+    }
 
     setDraggedItem(null);
     setHoverTarget(null);
     setIsDraggingActive(false);
-  };
+    activeTouchIdRef.current = null;
+  }, [draggedItem, hoverTarget, isDraggingActive, items]);
 
   // Keyboard rotation listener
   useEffect(() => {
@@ -410,16 +426,22 @@ export default function App() {
   }, [draggedItem]);
 
   useEffect(() => {
+    const handleMouseUp = (e: MouseEvent) => handleDragEnd(e);
+    const handleTouchEnd = (e: TouchEvent) => handleDragEnd(e);
+    const handleTouchCancel = (e: TouchEvent) => handleDragEnd(e);
+
     window.addEventListener('mousemove', handleDragMove);
-    window.addEventListener('mouseup', handleDragEnd);
+    window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('touchmove', handleDragMove, { passive: false });
-    window.addEventListener('touchend', handleDragEnd);
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchCancel);
 
     return () => {
       window.removeEventListener('mousemove', handleDragMove);
-      window.removeEventListener('mouseup', handleDragEnd);
+      window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('touchmove', handleDragMove);
-      window.removeEventListener('touchend', handleDragEnd);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchCancel);
     };
   }, [handleDragMove, handleDragEnd]); // dependencies included
 
@@ -598,42 +620,55 @@ export default function App() {
 
       {/* Dragged Item Portal / Overlay */}
       {draggedItem && (
-        <div 
-          className="fixed pointer-events-none z-[100] opacity-90"
-          style={{
-            left: cursorPos.x,
-            top: cursorPos.y,
-            transform: 'translate(-50%, -50%) scale(1.1)', 
-          }}
-        >
+        <>
           <div 
-            className="relative"
+            className="fixed pointer-events-none z-[100] opacity-90"
             style={{
-               display: 'grid',
-               gridTemplateColumns: `repeat(${draggedItem.shape[0].length}, ${containerCellSize}px)`, 
-               gap: '0px',
-               filter: 'drop-shadow(0 0 1px white) drop-shadow(0 0 4px rgba(255, 255, 255, 1))'
+              left: cursorPos.x,
+              top: cursorPos.y,
+              transform: 'translate(-50%, -50%) scale(1.1)', 
             }}
           >
-            {draggedItem.shape.map((row, r) => (
-              row.map((cell, c) => {
-                if (cell === 0) return <div key={`${r}-${c}`} style={{width: containerCellSize, height: containerCellSize}} />;
-                return (
-                  <div 
-                    key={`${r}-${c}`}
-                    className={`
-                      rounded-sm shadow-xl ${draggedItem.colorClass} 
-                      border border-black/5
-                    `}
-                    style={{ width: containerCellSize, height: containerCellSize }}
-                  >
-                     <div className="w-full h-full border-t border-l border-white/30 rounded-sm"></div>
-                  </div>
-                );
-              })
-            ))}
+            <div 
+              className="relative"
+              style={{
+                 display: 'grid',
+                 gridTemplateColumns: `repeat(${draggedItem.shape[0].length}, ${containerCellSize}px)`, 
+                 gap: '0px',
+                 filter: 'drop-shadow(0 0 1px white) drop-shadow(0 0 4px rgba(255, 255, 255, 1))'
+              }}
+            >
+              {draggedItem.shape.map((row, r) => (
+                row.map((cell, c) => {
+                  if (cell === 0) return <div key={`${r}-${c}`} style={{width: containerCellSize, height: containerCellSize}} />;
+                  return (
+                    <div 
+                      key={`${r}-${c}`}
+                      className={`
+                        rounded-sm shadow-xl ${draggedItem.colorClass} 
+                        border border-black/5
+                      `}
+                      style={{ width: containerCellSize, height: containerCellSize }}
+                    >
+                       <div className="w-full h-full border-t border-l border-white/30 rounded-sm"></div>
+                    </div>
+                  );
+                })
+              ))}
+            </div>
           </div>
-        </div>
+
+          {isSmallScreen && (
+            <button
+              type="button"
+              onClick={rotateDraggedItem}
+              onTouchStart={(e) => { e.preventDefault(); rotateDraggedItem(); }}
+              className="fixed bottom-4 right-4 z-[110] bg-stone-900 text-white px-4 py-3 rounded-full shadow-2xl active:scale-95"
+            >
+              🔄 {translations[lang].rotateHint || '旋转'}
+            </button>
+          )}
+        </>
       )}
 
     </div>

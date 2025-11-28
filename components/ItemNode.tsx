@@ -1,15 +1,14 @@
-
 import React, { useState } from 'react';
 import { GameItem } from '../types';
 
 interface ItemNodeProps {
   item: GameItem;
   roomCellSize: number;
-  onMouseDown: (e: React.MouseEvent, item: GameItem) => void;
+  onDragStart: (e: React.MouseEvent | React.TouchEvent, item: GameItem) => void;
   isDragging: boolean;
 }
 
-export const ItemNode: React.FC<ItemNodeProps> = ({ item, roomCellSize, onMouseDown, isDragging }) => {
+export const ItemNode: React.FC<ItemNodeProps> = ({ item, roomCellSize, onDragStart, isDragging }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const left = item.gridX * roomCellSize;
@@ -17,9 +16,8 @@ export const ItemNode: React.FC<ItemNodeProps> = ({ item, roomCellSize, onMouseD
   
   return (
     <div
-      // EVENT LOGIC CHANGE: Parent is transparent to clicks (pointer-events-none)
-      // This ensures clicking the empty corners of the bounding box passes through to items below.
-      onMouseDown={(e) => !item.isBlocked && onMouseDown(e, item)}
+      onMouseDown={(e) => !item.isBlocked && onDragStart(e, item)}
+      onTouchStart={(e) => !item.isBlocked && onDragStart(e, item)}
       className={`absolute transition-all duration-300 ease-out select-none pointer-events-none
         ${item.isBlocked 
           ? 'brightness-[0.4] grayscale opacity-90' 

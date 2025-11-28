@@ -1,4 +1,3 @@
-
 import React, { forwardRef } from 'react';
 import { GameContainer, GameItem, ItemType } from '../types';
 
@@ -9,17 +8,22 @@ interface ContainerBoxProps {
   draggedItem: GameItem | null;
   onPack: (containerId: string) => void;
   translations: any;
+  cellSize: number;
+  isCompact: boolean;
 }
 
-const CELL_SIZE = 34; // Matches App.tsx logic
+const DEFAULT_CELL_SIZE = 34;
 
 export const ContainerBox = forwardRef<HTMLDivElement, ContainerBoxProps>(({ 
   container, 
   hoverTarget,
   draggedItem, 
   onPack,
-  translations 
+  translations,
+  cellSize,
+  isCompact
 }, ref) => {
+  const resolvedCellSize = cellSize || DEFAULT_CELL_SIZE;
 
   // Render Grid
   const renderGrid = () => {
@@ -43,7 +47,6 @@ export const ContainerBox = forwardRef<HTMLDivElement, ContainerBoxProps>(({
         const occupiedId = container.gridState[r][c];
         const isGhost = ghostCells.has(cellId);
 
-        let cellContent = null;
         let cellClass = "bg-stone-200/50 shadow-inner"; // Empty slot style
 
         if (occupiedId) {
@@ -57,7 +60,7 @@ export const ContainerBox = forwardRef<HTMLDivElement, ContainerBoxProps>(({
           <div 
             key={cellId}
             className={`rounded-sm transition-colors duration-100 ${cellClass}`}
-            style={{ width: CELL_SIZE - 2, height: CELL_SIZE - 2 }} // -2 for gap
+            style={{ width: resolvedCellSize - 2, height: resolvedCellSize - 2 }} // -2 for gap
           />
         );
       }
@@ -81,8 +84,9 @@ export const ContainerBox = forwardRef<HTMLDivElement, ContainerBoxProps>(({
         ${container.isClosing ? 'scale-0 opacity-0' : 'scale-100 opacity-100'}
         shadow-lg select-none
         ${hoverTarget?.isValid ? 'ring-4 ring-emerald-300 ring-offset-2' : ''}
+        ${isCompact ? 'w-full' : ''}
       `}
-      style={{ minWidth: 'min-content' }}
+      style={{ minWidth: isCompact ? 'auto' : 'min-content' }}
     >
       {/* Label */}
       <div className="absolute -top-3 bg-white px-2 py-0.5 rounded-full text-xs font-bold shadow-sm border border-stone-200 z-20 whitespace-nowrap flex gap-2">
@@ -92,9 +96,9 @@ export const ContainerBox = forwardRef<HTMLDivElement, ContainerBoxProps>(({
 
       {/* Grid Area */}
       <div 
-        className="grid gap-[2px] bg-black/5 p-2 rounded-lg"
+        className={`grid gap-[2px] bg-black/5 p-2 rounded-lg ${isCompact ? 'w-full justify-center' : ''}`}
         style={{
-          gridTemplateColumns: `repeat(${container.gridWidth}, ${CELL_SIZE}px)`,
+          gridTemplateColumns: `repeat(${container.gridWidth}, ${resolvedCellSize}px)`,
         }}
       >
         {renderGrid()}
@@ -109,6 +113,7 @@ export const ContainerBox = forwardRef<HTMLDivElement, ContainerBoxProps>(({
             ${fillPercent === 100 
               ? 'bg-green-600 text-white hover:bg-green-500 animate-pulse' 
               : 'bg-stone-800 text-white hover:bg-stone-700'}
+            ${isCompact ? 'w-full justify-center' : ''}
           `}
         >
           <span>📦</span> {translations.packBtn || "Pack"}

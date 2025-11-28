@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { generateLevelTheme, generateStackedItems } from './services/geminiService';
 import { GameItem, GameContainer, ItemType, LevelTheme, Language, rotateShapeMatrix } from './types';
@@ -9,8 +8,8 @@ import { v4 as uuidv4 } from 'uuid';
 
 const ACTIVE_CONTAINER_LIMIT = 3;
 const ITEMS_PER_LEVEL = 35; 
-const CONTAINER_CELL_SIZE = 34; 
-const ROOM_CELL_SIZE = 34; // Size of grid cells in the room
+const BASE_CONTAINER_CELL_SIZE = 34; 
+const BASE_ROOM_CELL_SIZE = 34;
 const ROOM_W = 10;
 const ROOM_H = 10;
 
@@ -158,6 +157,24 @@ export default function App() {
   const [hoverTarget, setHoverTarget] = useState<{ containerId: string, r: number, c: number, isValid: boolean } | null>(null);
 
   const containerRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
+      setViewportHeight(window.innerHeight);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isSmallScreen = viewportWidth < 768;
+  const isTablet = viewportWidth >= 768 && viewportWidth < 1024;
+  const roomCellSize = Math.max(24, BASE_ROOM_CELL_SIZE * (isSmallScreen ? 0.65 : isTablet ? 0.85 : 1));
+  const containerCellSize = Math.max(22, BASE_CONTAINER_CELL_SIZE * (isSmallScreen ? 0.7 : isTablet ? 0.85 : 1));
 
   // --- Game Logic ---
 
@@ -249,6 +266,9 @@ export default function App() {
 
   const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
     if (!draggedItem) return;
+    if ('touches' in e) {
+      e.preventDefault();
+    }
 
     let clientX, clientY;
     if ('touches' in e) {
@@ -269,39 +289,34 @@ export default function App() {
 
     // --- Global Hit Testing ---
     
-    let foundTarget = null;
+    let foundTarget: { containerId: string, r: number, c: number, isValid: boolean } | null = null;
 
     containerRefs.current.forEach((el, id) => {
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      
-      // Expand hit area slightly
+      const containerObj = containerSlots.find(c => c && c.id === id);
+      if (!containerObj || containerObj.isPacked) return;
+
       if (
         clientX >= rect.left && 
         clientX <= rect.right && 
         clientY >= rect.top && 
         clientY <= rect.bottom
       ) {
-        const containerObj = containerSlots.find(c => c && c.id === id);
-        if (!containerObj || containerObj.isPacked) return;
-
-        const gridPixelWidth = containerObj.gridWidth * CONTAINER_CELL_SIZE;
-        const containerCenterX = rect.left + rect.width / 2;
-        const gridStartY = rect.top + 30; 
-        const gridStartX = containerCenterX - gridPixelWidth / 2;
+        const gridPixelWidth = containerObj.gridWidth * containerCellSize;
+        const gridStartY = rect.top + (isSmallScreen ? 24 : 30);
+        const gridStartX = rect.left + (rect.width - gridPixelWidth) / 2;
 
         const relX = clientX - gridStartX;
         const relY = clientY - gridStartY;
 
-        // Calculate item centering
-        const itemW_px = draggedItem.shape[0].length * CONTAINER_CELL_SIZE;
-        const itemH_px = draggedItem.shape.length * CONTAINER_CELL_SIZE;
-        
+        const itemW_px = draggedItem.shape[0].length * containerCellSize;
+        const itemH_px = draggedItem.shape.length * containerCellSize;
         const effectiveX = relX - itemW_px / 2;
         const effectiveY = relY - itemH_px / 2;
 
-        const targetC = Math.round(effectiveX / CONTAINER_CELL_SIZE);
-        const targetR = Math.round(effectiveY / CONTAINER_CELL_SIZE);
+        const targetC = Math.round(effectiveX / containerCellSize);
+        const targetR = Math.round(effectiveY / containerCellSize);
 
         // Validate bounds
         if (targetC >= 0 && targetR >= 0 && 
@@ -331,7 +346,7 @@ export default function App() {
 
     setHoverTarget(foundTarget);
 
-  }, [draggedItem, containerSlots, dragStartPos, isDraggingActive]);
+  }, [draggedItem, containerSlots, dragStartPos, isDraggingActive, containerCellSize, isSmallScreen]);
 
   const handleDragEnd = () => {
     if (!draggedItem) return;
@@ -446,16 +461,16 @@ export default function App() {
   }
 
   return (
-    <div className={`h-screen bg-gradient-to-br ${theme?.backgroundGradient || 'from-gray-100 to-gray-200'} select-none touch-none overflow-hidden flex flex-col`}>
+    <div className={`h-screen bg-gradient-to-br ${theme?.backgroundGradient || 'from-gray-100 to-gray-200'} select-none overflow-hidden flex flex-col ${isSmallScreen ? 'touch-manipulation' : 'touch-none'}`}>
       {/* Header Bar */}
-      <div className="flex-shrink-0 flex justify-between items-center px-6 py-3 bg-white/40 backdrop-blur-sm shadow-sm z-30">
+      <div className={`flex-shrink-0 flex ${isSmallScreen ? 'flex-col gap-2 text-center' : 'justify-between items-center'} px-4 md:px-6 py-3 bg-white/40 backdrop-blur-sm shadow-sm z-30`}>
         <div>
-          <h2 className="text-xl font-bold text-stone-800">{theme?.name}</h2>
+          <h2 className={`${isSmallScreen ? 'text-lg' : 'text-xl'} font-bold text-stone-800`}>{theme?.name}</h2>
           <div className="text-xs text-stone-600">
              {translations[lang].rotateHint || "Drag & press 'R' to spin"}
           </div>
         </div>
-        <div className="flex gap-6 text-right">
+        <div className={`flex ${isSmallScreen ? 'justify-center gap-4' : 'gap-6 text-right'}`}>
           <div>
             <div className="text-xs font-bold text-stone-500 uppercase">{translations[lang].remaining}</div>
             <div className="text-lg font-black text-stone-800">{items.length}</div>
@@ -468,22 +483,20 @@ export default function App() {
       </div>
 
       {/* Middle: Room Area */}
-      <div className="flex-1 relative flex items-center justify-center overflow-hidden w-full p-4">
-          
-          {/* Room Grid */}
-          <div 
-            className="bg-white/40 backdrop-blur-sm rounded-xl border-8 border-stone-600 shadow-2xl relative box-content transition-transform duration-500 ease-out"
-            style={{ 
-              width: ROOM_W * ROOM_CELL_SIZE, 
-              height: ROOM_H * ROOM_CELL_SIZE,
-            }}
-          >
-             {/* Grid Lines */}
+      <div className={`flex-1 relative flex items-center justify-center overflow-hidden w-full ${isSmallScreen ? 'p-2' : 'p-4'}`}>
+        <div 
+          className={`bg-white/40 backdrop-blur-sm rounded-xl border-4 md:border-8 border-stone-600 shadow-2xl relative box-content transition-transform duration-500 ease-out ${isSmallScreen ? 'scale-90' : ''}`}
+          style={{ 
+            width: ROOM_W * roomCellSize, 
+            height: ROOM_H * roomCellSize,
+          }}
+        >
+          {/* Grid Lines */}
              <div 
                 className="absolute inset-0 pointer-events-none opacity-20"
                 style={{
                   backgroundImage: `linear-gradient(to right, #000 1px, transparent 1px), linear-gradient(to bottom, #000 1px, transparent 1px)`,
-                  backgroundSize: `${ROOM_CELL_SIZE}px ${ROOM_CELL_SIZE}px`
+                  backgroundSize: `${roomCellSize}px ${roomCellSize}px`
                 }}
              />
 
@@ -491,8 +504,8 @@ export default function App() {
               <ItemNode 
                 key={item.id} 
                 item={item} 
-                roomCellSize={ROOM_CELL_SIZE}
-                onMouseDown={handleDragStart}
+                roomCellSize={roomCellSize}
+                onDragStart={handleDragStart}
                 isDragging={draggedItem?.id === item.id}
               />
             ))}
@@ -525,7 +538,7 @@ export default function App() {
       </div>
 
       {/* Bottom: Containers Workarea */}
-      <div className="flex-shrink-0 w-full bg-stone-100/80 backdrop-blur-xl border-t border-stone-200 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-20 flex flex-col">
+      <div className={`flex-shrink-0 w-full bg-stone-100/80 backdrop-blur-xl border-t border-stone-200 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-20 flex flex-col ${isSmallScreen ? 'max-h-[45%] overflow-y-auto' : ''}`}>
            <div className="flex justify-between items-center px-4 py-1 bg-white/50 border-b border-stone-200/50">
               <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{translations[lang].boxes}</span>
               <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
@@ -534,7 +547,7 @@ export default function App() {
            </div>
 
            {/* Fixed Slot Layout */}
-           <div className="flex items-end justify-center gap-4 overflow-x-auto p-4 min-h-[200px]">
+           <div className={`${isSmallScreen ? 'grid grid-cols-1 gap-3 px-3 py-4' : 'flex items-end justify-center gap-4 overflow-x-auto p-4 min-h-[200px]'}`}>
              {containerSlots.map((container, index) => {
                if (container) {
                  return (
@@ -546,6 +559,8 @@ export default function App() {
                       draggedItem={draggedItem}
                       onPack={handlePackContainer}
                       translations={translations[lang]}
+                      cellSize={containerCellSize}
+                      isCompact={isSmallScreen}
                     />
                  );
                } else {
@@ -595,15 +610,14 @@ export default function App() {
             className="relative"
             style={{
                display: 'grid',
-               gridTemplateColumns: `repeat(${draggedItem.shape[0].length}, ${CONTAINER_CELL_SIZE}px)`, 
+               gridTemplateColumns: `repeat(${draggedItem.shape[0].length}, ${containerCellSize}px)`, 
                gap: '0px',
-               // Same glowing outline for dragged item
                filter: 'drop-shadow(0 0 1px white) drop-shadow(0 0 4px rgba(255, 255, 255, 1))'
             }}
           >
             {draggedItem.shape.map((row, r) => (
               row.map((cell, c) => {
-                if (cell === 0) return <div key={`${r}-${c}`} style={{width: CONTAINER_CELL_SIZE, height: CONTAINER_CELL_SIZE}} />;
+                if (cell === 0) return <div key={`${r}-${c}`} style={{width: containerCellSize, height: containerCellSize}} />;
                 return (
                   <div 
                     key={`${r}-${c}`}
@@ -611,7 +625,7 @@ export default function App() {
                       rounded-sm shadow-xl ${draggedItem.colorClass} 
                       border border-black/5
                     `}
-                    style={{ width: CONTAINER_CELL_SIZE, height: CONTAINER_CELL_SIZE }}
+                    style={{ width: containerCellSize, height: containerCellSize }}
                   >
                      <div className="w-full h-full border-t border-l border-white/30 rounded-sm"></div>
                   </div>

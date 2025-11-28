@@ -1,16 +1,13 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
 import { LevelTheme, ItemType, Language, ShapeMatrix, GameItem } from "../types";
 import { v4 as uuidv4 } from 'uuid';
 
-// Use process.env.API_KEY exclusively as per guidelines.
-// This assumes process.env.API_KEY is available in the environment.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// --- DATA LIBRARY FOR PROCEDURAL GENERATION ---
 
-// Define a rich variety of shapes
-// All shapes must be orthogonally connected (edge-to-edge), no diagonal-only connections.
+// 1. Shapes Definition
+// All shapes must be orthogonally connected.
 const SHAPES: Record<string, ShapeMatrix> = {
-  // --- 1 to 3 blocks (Small) ---
+  // --- Small (1-3) ---
   '1x1': [[1]],
   '1x2': [[1, 1]],
   '2x1': [[1], [1]],
@@ -19,7 +16,7 @@ const SHAPES: Record<string, ShapeMatrix> = {
   'Corner-Sm': [[1, 0], [1, 1]], 
   'Small-T': [[1, 1, 1], [0, 1, 0]], 
 
-  // --- 4 blocks (Medium / Tetrominoes) ---
+  // --- Medium (4) ---
   '2x2': [[1, 1], [1, 1]],
   '4x1': [[1], [1], [1], [1]],
   '1x4': [[1, 1, 1, 1]],
@@ -30,7 +27,7 @@ const SHAPES: Record<string, ShapeMatrix> = {
   'S': [[0, 1, 1], [1, 1, 0]],
   'Podium': [[0, 1, 0], [1, 1, 1]],
   
-  // --- 5+ blocks (Large / Complex) ---
+  // --- Large (5+) ---
   'P-Up': [[1, 1], [1, 1], [1, 0]],
   'P-Down': [[1, 0], [1, 1], [1, 1]],
   'U-Sm': [[1, 0, 1], [1, 1, 1]],
@@ -51,7 +48,6 @@ const SHAPES: Record<string, ShapeMatrix> = {
   '2x4': [[1, 1], [1, 1], [1, 1], [1, 1]],
 };
 
-// Categorize keys for weighted generation
 const KEYS_SMALL = ['1x1', '1x2', '2x1', '3x1', '1x3', 'Corner-Sm', 'Small-T'];
 const KEYS_MEDIUM = ['2x2', '4x1', '1x4', 'L', 'J', 'T', 'Z', 'S', 'Podium'];
 const KEYS_LARGE = ['P-Up', 'P-Down', 'U-Sm', 'Plus', 'W', 'Stairs', 'Chair', 'Long-L', 'Snake', '2x3', '3x2', 'H', 'Donut', 'Big-L', 'Pyramid', 'C-Shape', '3x3', '2x4'];
@@ -63,32 +59,140 @@ const COLORS = [
   'bg-violet-500', 'bg-purple-500', 'bg-fuchsia-500', 'bg-pink-500', 'bg-rose-500'
 ];
 
+const GRADIENTS = [
+  "from-blue-100 to-indigo-50",
+  "from-orange-100 to-yellow-50",
+  "from-green-100 to-emerald-50",
+  "from-gray-200 to-slate-100",
+  "from-pink-100 to-rose-50",
+  "from-purple-100 to-fuchsia-50",
+  "from-teal-100 to-cyan-50",
+  "from-amber-100 to-orange-50"
+];
+
+// 2. Item Library (Multilingual)
+// Maps ItemType -> List of {emoji, nameEN, nameZH}
+const ITEM_LIBRARY: Record<ItemType, {emoji: string, name: Record<Language, string>}[]> = {
+  [ItemType.BOOK]: [
+    { emoji: "📚", name: { en: "Textbook", "zh-CN": "课本" } },
+    { emoji: "📕", name: { en: "Novel", "zh-CN": "小说" } },
+    { emoji: "📗", name: { en: "Journal", "zh-CN": "日记本" } },
+    { emoji: "📘", name: { en: "Manual", "zh-CN": "手册" } },
+    { emoji: "📜", name: { en: "Scroll", "zh-CN": "卷轴" } },
+  ],
+  [ItemType.TOY]: [
+    { emoji: "🧸", name: { en: "Bear", "zh-CN": "泰迪熊" } },
+    { emoji: "🚗", name: { en: "Car", "zh-CN": "玩具车" } },
+    { emoji: "🤖", name: { en: "Robot", "zh-CN": "机器人" } },
+    { emoji: "🦕", name: { en: "Dino", "zh-CN": "恐龙" } },
+    { emoji: "🎲", name: { en: "Dice", "zh-CN": "骰子" } },
+    { emoji: "🧩", name: { en: "Puzzle", "zh-CN": "拼图" } },
+  ],
+  [ItemType.CLOTHING]: [
+    { emoji: "👕", name: { en: "Shirt", "zh-CN": "衬衫" } },
+    { emoji: "🧦", name: { en: "Socks", "zh-CN": "袜子" } },
+    { emoji: "👗", name: { en: "Dress", "zh-CN": "裙子" } },
+    { emoji: "🧢", name: { en: "Cap", "zh-CN": "帽子" } },
+    { emoji: "👟", name: { en: "Sneaker", "zh-CN": "运动鞋" } },
+    { emoji: "🧤", name: { en: "Gloves", "zh-CN": "手套" } },
+  ],
+  [ItemType.KITCHEN]: [
+    { emoji: "🍳", name: { en: "Pan", "zh-CN": "平底锅" } },
+    { emoji: "🥣", name: { en: "Bowl", "zh-CN": "碗" } },
+    { emoji: "🥢", name: { en: "Chopsticks", "zh-CN": "筷子" } },
+    { emoji: "🥄", name: { en: "Spoon", "zh-CN": "勺子" } },
+    { emoji: "🧂", name: { en: "Salt", "zh-CN": "盐瓶" } },
+    { emoji: "🍎", name: { en: "Apple", "zh-CN": "苹果" } },
+    { emoji: "🥕", name: { en: "Carrot", "zh-CN": "胡萝卜" } },
+    { emoji: "🍞", name: { en: "Bread", "zh-CN": "面包" } },
+  ],
+  [ItemType.PLANT]: [
+    { emoji: "🌵", name: { en: "Cactus", "zh-CN": "仙人掌" } },
+    { emoji: "🪴", name: { en: "Potted Plant", "zh-CN": "盆栽" } },
+    { emoji: "🌻", name: { en: "Sunflower", "zh-CN": "向日葵" } },
+    { emoji: "🌹", name: { en: "Rose", "zh-CN": "玫瑰" } },
+    { emoji: "🍁", name: { en: "Leaf", "zh-CN": "枫叶" } },
+  ],
+  [ItemType.TOOL]: [
+    { emoji: "🔨", name: { en: "Hammer", "zh-CN": "锤子" } },
+    { emoji: "🔧", name: { en: "Wrench", "zh-CN": "扳手" } },
+    { emoji: "🪛", name: { en: "Screwdriver", "zh-CN": "螺丝刀" } },
+    { emoji: "✂️", name: { en: "Scissors", "zh-CN": "剪刀" } },
+    { emoji: "🔦", name: { en: "Flashlight", "zh-CN": "手电筒" } },
+  ],
+  [ItemType.ELECTRONIC]: [
+    { emoji: "📱", name: { en: "Phone", "zh-CN": "手机" } },
+    { emoji: "💻", name: { en: "Laptop", "zh-CN": "笔记本" } },
+    { emoji: "🖱️", name: { en: "Mouse", "zh-CN": "鼠标" } },
+    { emoji: "🎧", name: { en: "Headphones", "zh-CN": "耳机" } },
+    { emoji: "📷", name: { en: "Camera", "zh-CN": "相机" } },
+    { emoji: "💾", name: { en: "Floppy", "zh-CN": "软盘" } },
+  ],
+  [ItemType.MISC]: [
+    { emoji: "🔑", name: { en: "Key", "zh-CN": "钥匙" } },
+    { emoji: "📦", name: { en: "Box", "zh-CN": "盒子" } },
+    { emoji: "💎", name: { en: "Gem", "zh-CN": "宝石" } },
+    { emoji: "🎨", name: { en: "Palette", "zh-CN": "调色板" } },
+    { emoji: "🎸", name: { en: "Guitar", "zh-CN": "吉他" } },
+    { emoji: "🧸", name: { en: "Doll", "zh-CN": "玩偶" } },
+  ]
+};
+
+// 3. Room Templates
+interface RoomTemplate {
+  name: Record<Language, string>;
+  primaryTypes: ItemType[];
+}
+
+const ROOM_TEMPLATES: RoomTemplate[] = [
+  { 
+    name: { en: "Bedroom", "zh-CN": "卧室" }, 
+    primaryTypes: [ItemType.CLOTHING, ItemType.BOOK, ItemType.TOY, ItemType.ELECTRONIC] 
+  },
+  { 
+    name: { en: "Kitchen", "zh-CN": "厨房" }, 
+    primaryTypes: [ItemType.KITCHEN, ItemType.PLANT] 
+  },
+  { 
+    name: { en: "Garden Shed", "zh-CN": "花园小屋" }, 
+    primaryTypes: [ItemType.TOOL, ItemType.PLANT, ItemType.MISC] 
+  },
+  { 
+    name: { en: "Office", "zh-CN": "办公室" }, 
+    primaryTypes: [ItemType.BOOK, ItemType.ELECTRONIC, ItemType.MISC] 
+  },
+  { 
+    name: { en: "Playroom", "zh-CN": "游戏室" }, 
+    primaryTypes: [ItemType.TOY, ItemType.ELECTRONIC, ItemType.MISC] 
+  },
+  { 
+    name: { en: "Garage", "zh-CN": "车库" }, 
+    primaryTypes: [ItemType.TOOL, ItemType.MISC, ItemType.ELECTRONIC] 
+  },
+];
+
+const ADJECTIVES: Record<Language, string[]> = {
+  en: ["Messy", "Cozy", "Tiny", "Sunny", "Grandpa's", "Magic", "Cyberpunk", "Dusty", "Colorful", "Secret"],
+  "zh-CN": ["凌乱的", "温馨的", "小小的", "阳光明媚的", "爷爷的", "魔法", "赛博朋克", "积灰的", "五彩斑斓的", "秘密"]
+};
+
+
+// --- GENERATION LOGIC ---
+
 export const getRandomShape = (): { matrix: ShapeMatrix, name: string } => {
   const rand = Math.random();
   let pool: string[] = [];
-
-  // Weighted Logic:
-  // 60% Small
-  // 30% Medium
-  // 10% Large
-  if (rand < 0.60) {
-    pool = KEYS_SMALL;
-  } else if (rand < 0.90) {
-    pool = KEYS_MEDIUM;
-  } else {
-    pool = KEYS_LARGE;
-  }
-
+  if (rand < 0.60) pool = KEYS_SMALL;
+  else if (rand < 0.90) pool = KEYS_MEDIUM;
+  else pool = KEYS_LARGE;
   const key = pool[Math.floor(Math.random() * pool.length)];
   return { matrix: SHAPES[key], name: key };
 };
 
 export const getRandomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
 
-// --- Helper for Stacking Logic ---
 export const generateStackedItems = (theme: LevelTheme, roomW: number, roomH: number, count: number): GameItem[] => {
   const items: GameItem[] = [];
-  // Elevation map: stores the current height (layer count) at each cell [y][x]
   const heightMap: number[][] = Array(roomH).fill(0).map(() => Array(roomW).fill(0));
 
   for (let i = 0; i < count; i++) {
@@ -97,21 +201,15 @@ export const generateStackedItems = (theme: LevelTheme, roomW: number, roomH: nu
     const itemH = matrix.length;
     const itemW = matrix[0].length;
     
-    // Try to find a valid position
     let placed = false;
     let attempts = 0;
 
     while (!placed && attempts < 50) {
       attempts++;
-      
-      // Random position
       const gridX = Math.floor(Math.random() * (roomW - itemW + 1));
       const gridY = Math.floor(Math.random() * (roomH - itemH + 1));
 
-      // Calculate the required layer for this position
-      // It must be on top of the highest thing currently in its footprint
       let maxElevationUnderneath = 0;
-      
       for (let r = 0; r < itemH; r++) {
         for (let c = 0; c < itemW; c++) {
           if (matrix[r][c] === 1) {
@@ -120,11 +218,7 @@ export const generateStackedItems = (theme: LevelTheme, roomW: number, roomH: nu
         }
       }
 
-      // To make it look like a messy pile, we accept this position
-      // The layer will be maxElevation + 1
       const layer = maxElevationUnderneath; 
-
-      // Update the item
       items.push({
         id: uuidv4(),
         name: themeItem.name,
@@ -132,15 +226,14 @@ export const generateStackedItems = (theme: LevelTheme, roomW: number, roomH: nu
         type: themeItem.type,
         gridX,
         gridY,
-        rotation: 0, // Keep rotation 0 for logic simplicity in this version
+        rotation: 0,
         scale: 1,
         layer: layer,
-        isBlocked: false, // Will be calculated globally later
+        isBlocked: false,
         shape: matrix,
         colorClass: getRandomColor()
       });
 
-      // Update height map
       for (let r = 0; r < itemH; r++) {
         for (let c = 0; c < itemW; c++) {
           if (matrix[r][c] === 1) {
@@ -151,77 +244,76 @@ export const generateStackedItems = (theme: LevelTheme, roomW: number, roomH: nu
       placed = true;
     }
   }
-
-  // Sort by layer for rendering order (though z-index handles it mostly)
   return items.sort((a, b) => a.layer - b.layer);
 };
 
-
-const getFallbackTheme = (lang: Language): LevelTheme => {
-  const isZh = lang === 'zh-CN';
-  return {
-    name: isZh ? "凌乱的卧室 (离线模式)" : "Messy Bedroom (Offline)",
-    description: isZh ? "没有检测到API Key，正在使用默认主题。" : "No API Key detected, using default theme.",
-    backgroundGradient: "from-blue-100 to-indigo-50",
-    items: [
-      { type: ItemType.BOOK, emoji: "📚", name: isZh ? "课本" : "Textbook" },
-      { type: ItemType.BOOK, emoji: "📕", name: isZh ? "小说" : "Novel" },
-      { type: ItemType.TOY, emoji: "🧸", name: isZh ? "泰迪熊" : "Bear" },
-      { type: ItemType.TOY, emoji: "🚗", name: isZh ? "玩具车" : "Car" },
-      { type: ItemType.CLOTHING, emoji: "👕", name: isZh ? "衬衫" : "Shirt" },
-      { type: ItemType.CLOTHING, emoji: "🧦", name: isZh ? "袜子" : "Socks" },
-      { type: ItemType.PLANT, emoji: "🌵", name: isZh ? "仙人掌" : "Cactus" },
-      { type: ItemType.ELECTRONIC, emoji: "📱", name: isZh ? "手机" : "Phone" },
+export const generateLevelTheme = async (lang: Language): Promise<LevelTheme> => {
+  // Purely procedural generation - No API Key required, no delays.
+  
+  // 1. Pick a template
+  const template = ROOM_TEMPLATES[Math.floor(Math.random() * ROOM_TEMPLATES.length)];
+  
+  // 2. Pick an adjective
+  const adj = ADJECTIVES[lang][Math.floor(Math.random() * ADJECTIVES[lang].length)];
+  
+  // 3. Construct name
+  const themeName = lang === 'zh-CN' 
+    ? `${adj}${template.name[lang]}` 
+    : `${adj} ${template.name[lang]}`;
+    
+  // 4. Construct Description
+  const descriptions: Record<Language, string[]> = {
+    "zh-CN": [
+      "这里太乱了，快来收拾一下！",
+      "这么多东西，箱子够用吗？",
+      "小心不要把东西弄坏了。",
+      "看着整洁的房间真舒服。"
+    ],
+    en: [
+      "It's a total mess in here!",
+      "Are there enough boxes?",
+      "Be careful with these items.",
+      "Nothing beats a clean room."
     ]
   };
-};
+  const desc = descriptions[lang][Math.floor(Math.random() * descriptions[lang].length)];
 
-export const generateLevelTheme = async (lang: Language): Promise<LevelTheme> => {
-  // Check if we have a valid key
-  if (!process.env.API_KEY) {
-    console.warn("No valid API Key found. Using fallback theme.");
-    return getFallbackTheme(lang);
-  }
-
-  try {
-    const langPrompt = lang === 'zh-CN' ? 'Simplified Chinese' : 'English';
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Generate a creative and cozy theme for a room organizing game. Provide a list of item types (mapped to general categories) and specific emojis to represent them. The output must be JSON. Language: ${langPrompt}.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING, description: "Creative name of the room/theme" },
-            description: { type: Type.STRING, description: "Short flavor text" },
-            backgroundGradient: { type: Type.STRING, description: "Tailwind gradient classes e.g. 'from-purple-100 to-pink-50'" },
-            items: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  type: { 
-                    type: Type.STRING, 
-                    enum: Object.values(ItemType),
-                    description: "The logic category of the item"
-                  },
-                  emoji: { type: Type.STRING, description: "A single emoji" },
-                  name: { type: Type.STRING, description: "Name of the object" }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-
-    if (response.text) {
-      return JSON.parse(response.text) as LevelTheme;
+  // 5. Build Item List
+  // 70% chance to pick from primary types, 30% from any random type
+  const themeItems: { type: ItemType; emoji: string; name: string }[] = [];
+  
+  // We want to generate a pool of items for this level
+  const POOL_SIZE = 8; // Number of unique item types available in this level
+  
+  for (let i = 0; i < POOL_SIZE; i++) {
+    let targetType: ItemType;
+    if (Math.random() < 0.7) {
+      targetType = template.primaryTypes[Math.floor(Math.random() * template.primaryTypes.length)];
+    } else {
+      const allTypes = Object.values(ItemType);
+      targetType = allTypes[Math.floor(Math.random() * allTypes.length)];
     }
-    return getFallbackTheme(lang);
-  } catch (error) {
-    console.warn("Gemini generation failed, using fallback.", error);
-    return getFallbackTheme(lang);
+    
+    const possibleItems = ITEM_LIBRARY[targetType];
+    const specificItem = possibleItems[Math.floor(Math.random() * possibleItems.length)];
+    
+    themeItems.push({
+      type: targetType,
+      emoji: specificItem.emoji,
+      name: specificItem.name[lang]
+    });
   }
+
+  // 6. Pick Background
+  const gradient = GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)];
+
+  // Simulate a tiny delay for UI transition effect (optional, can be 0)
+  // await new Promise(r => setTimeout(r, 100));
+
+  return {
+    name: themeName,
+    description: desc,
+    items: themeItems,
+    backgroundGradient: gradient
+  };
 };

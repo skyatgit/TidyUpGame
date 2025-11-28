@@ -3,6 +3,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { LevelTheme, ItemType, Language, ShapeMatrix, GameItem } from "../types";
 import { v4 as uuidv4 } from 'uuid';
 
+// Use process.env.API_KEY exclusively as per guidelines.
+// This assumes process.env.API_KEY is available in the environment.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Define a rich variety of shapes
@@ -158,8 +160,8 @@ export const generateStackedItems = (theme: LevelTheme, roomW: number, roomH: nu
 const getFallbackTheme = (lang: Language): LevelTheme => {
   const isZh = lang === 'zh-CN';
   return {
-    name: isZh ? "凌乱的卧室" : "Messy Bedroom",
-    description: isZh ? "是时候清理这个舒适的小窝了！" : "Time to clean up this cozy mess!",
+    name: isZh ? "凌乱的卧室 (离线模式)" : "Messy Bedroom (Offline)",
+    description: isZh ? "没有检测到API Key，正在使用默认主题。" : "No API Key detected, using default theme.",
     backgroundGradient: "from-blue-100 to-indigo-50",
     items: [
       { type: ItemType.BOOK, emoji: "📚", name: isZh ? "课本" : "Textbook" },
@@ -175,6 +177,12 @@ const getFallbackTheme = (lang: Language): LevelTheme => {
 };
 
 export const generateLevelTheme = async (lang: Language): Promise<LevelTheme> => {
+  // Check if we have a valid key
+  if (!process.env.API_KEY) {
+    console.warn("No valid API Key found. Using fallback theme.");
+    return getFallbackTheme(lang);
+  }
+
   try {
     const langPrompt = lang === 'zh-CN' ? 'Simplified Chinese' : 'English';
     const response = await ai.models.generateContent({
